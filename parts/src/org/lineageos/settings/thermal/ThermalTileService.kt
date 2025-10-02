@@ -183,23 +183,19 @@ class ThermalTileService : TileService() {
 
     private fun updateTile() {
         val tile = qsTile ?: return
-        logDebug("Updating tile visuals to ${modeLabel(currentMode)}")
-        when (currentMode) {
-            MODE_PERFORMANCE -> {
-                tile.state = Tile.STATE_ACTIVE
-                tile.icon = Icon.createWithResource(this, R.drawable.ic_thermal_performance)
-            }
-            MODE_BATTERY_SAVER -> {
-                tile.state = Tile.STATE_INACTIVE
-                tile.icon = Icon.createWithResource(this, R.drawable.ic_thermal_battery_saver)
-            }
-            else -> {
-                tile.state = Tile.STATE_INACTIVE
-                tile.icon = Icon.createWithResource(this, R.drawable.ic_thermal_default)
-            }
+        val (state, iconRes) = when (currentMode) {
+            MODE_PERFORMANCE -> Tile.STATE_ACTIVE to R.drawable.ic_thermal_performance
+            MODE_BATTERY_SAVER -> Tile.STATE_ACTIVE to R.drawable.ic_thermal_battery_saver
+            else -> Tile.STATE_INACTIVE to R.drawable.ic_thermal_default
         }
+
+        logDebug("Updating tile visuals to ${modeLabel(currentMode)} with state=$state")
+        tile.state = state
+        tile.icon = Icon.createWithResource(this, iconRes)
         tile.label = getString(R.string.thermal_tile_label)
-        tile.subtitle = modeLabel(currentMode)
+        val subtitle = modeLabel(currentMode)
+        tile.subtitle = subtitle
+        tile.stateDescription = subtitle
         tile.updateTile()
     }
 
