@@ -259,7 +259,6 @@ class ThermalTileService : TileService() {
                     currentMode = MODE_BATTERY_SAVER
                     updateTile()
                     enqueueModeChange(MODE_BATTERY_SAVER)
-    private const val MODE_PENDING_NONE = -1
                 }
             }
         }
@@ -300,5 +299,6 @@ class ThermalTileService : TileService() {
         private const val MODE_PERFORMANCE = 1
         private const val MODE_BATTERY_SAVER = 2
         private const val MODE_UNKNOWN = 3
+        private const val MODE_PENDING_NONE = -1
     }
 }
