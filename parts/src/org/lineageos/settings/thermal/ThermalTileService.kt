@@ -23,6 +23,7 @@ import org.lineageos.settings.utils.FileUtils
 import java.util.concurrent.Executors
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 
 class ThermalTileService : TileService() {
     private lateinit var sharedPrefs: SharedPreferences
@@ -31,7 +32,8 @@ class ThermalTileService : TileService() {
     private var batterySaverObserver: ContentObserver? = null
     @Volatile private var currentMode: Int = MODE_DEFAULT
     private val tileExecutor: ExecutorService = Executors.newSingleThreadExecutor()
-    private val updateInProgress = AtomicBoolean(false)
+    private val workerRunning = AtomicBoolean(false)
+    private val pendingMode = AtomicInteger(MODE_PENDING_NONE)
     private val mainHandler = Handler(Looper.getMainLooper())
 
     private fun logDebug(message: String) {
@@ -63,7 +65,7 @@ class ThermalTileService : TileService() {
         currentMode = getCurrentThermalMode()
         if (currentMode == MODE_UNKNOWN) {
             currentMode = MODE_DEFAULT
-            setThermalMode(currentMode)
+            enqueueModeChange(currentMode)
         }
         logDebug("Tile listening with mode: ${modeLabel(currentMode)}")
         updateTile()
@@ -79,10 +81,6 @@ class ThermalTileService : TileService() {
     }
 
     private fun toggleThermalMode() {
-        if (!updateInProgress.compareAndSet(false, true)) {
-            logDebug("Thermal mode change already in progress, ignoring tap")
-            return
-        }
 
         val nextMode = when (currentMode) {
             MODE_UNKNOWN -> MODE_DEFAULT
@@ -93,20 +91,39 @@ class ThermalTileService : TileService() {
         currentMode = nextMode
         updateTile()
 
-        tileExecutor.execute {
-            try {
-                setThermalMode(nextMode)
-                val refreshedMode = getCurrentThermalMode()
-                if (refreshedMode != MODE_UNKNOWN) {
-                    logDebug("Thermal node now reports ${modeLabel(refreshedMode)}")
-                    currentMode = refreshedMode
+        enqueueModeChange(nextMode)
+    }
+
+    private fun enqueueModeChange(mode: Int) {
+        pendingMode.set(mode)
+        if (workerRunning.compareAndSet(false, true)) {
+            logDebug("Starting worker for ${modeLabel(mode)}")
+            tileExecutor.execute { processPendingModes() }
+        } else {
+            logDebug("Queued ${modeLabel(mode)} while worker running")
+        }
+    }
+
+    private fun processPendingModes() {
+        while (true) {
+            val mode = pendingMode.getAndSet(MODE_PENDING_NONE)
+            if (mode == MODE_PENDING_NONE) {
+                workerRunning.set(false)
+                if (pendingMode.get() == MODE_PENDING_NONE || !workerRunning.compareAndSet(false, true)) {
+                    logDebug("Worker idle, no pending modes")
+                    break
+                } else {
+                    logDebug("New mode enqueued while stopping worker, continuing")
+                    continue
                 }
-            } finally {
-                updateInProgress.set(false)
-                mainHandler.post {
-                    logDebug("Tile refresh after background write - ${modeLabel(currentMode)}")
-                    updateTile()
-                }
+            }
+
+            logDebug("Applying pending mode ${modeLabel(mode)}")
+            setThermalMode(mode)
+            currentMode = mode
+            mainHandler.post {
+                logDebug("Tile refreshed after applying ${modeLabel(currentMode)}")
+                updateTile()
             }
         }
     }
@@ -131,7 +148,7 @@ class ThermalTileService : TileService() {
         }
 
         val success = FileUtils.writeLine(THERMAL_SCONFIG, thermalValue.toString())
-        logDebug("Requested thermal mode ${modeLabel(mode)} (${thermalValue}) success=$success")
+        logDebug("Requested thermal mode ${modeLabel(mode)} ($thermalValue) success=$success")
 
         when (mode) {
             MODE_PERFORMANCE -> {
@@ -244,8 +261,9 @@ class ThermalTileService : TileService() {
                 if (isBatterySaverOn && (currentMode == MODE_DEFAULT || currentMode == MODE_PERFORMANCE)) {
                     logDebug("Battery saver enabled, switching to battery saver thermal mode")
                     currentMode = MODE_BATTERY_SAVER
-                    setThermalMode(currentMode)
                     updateTile()
+                    enqueueModeChange(MODE_BATTERY_SAVER)
+    private const val MODE_PENDING_NONE = -1
                 }
             }
         }
