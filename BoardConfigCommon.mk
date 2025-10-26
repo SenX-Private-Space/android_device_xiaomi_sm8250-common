@@ -119,6 +119,10 @@ HWUI_COMPILE_FOR_PERF := true
 TARGET_USES_ION := true
 
 
+# Kernel Clang Flags
+KERNEL_CC := CC=clang
+override KERNEL_TOOLCHAIN_PREFIX_arm := arm-linux-android-
+
 # Partitions
 BOARD_FLASH_BLOCK_SIZE := 262144 # (BOARD_KERNEL_PAGESIZE * 64)
 ifeq ($(TARGET_IS_VAB),true)
